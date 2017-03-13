@@ -328,7 +328,6 @@ class ParticleFilter(InferenceModule):
         for p in self.legalPositions:
             trueDistance = util.manhattanDistance(p, pacmanPosition)
             posteriorDist[p] += emissionModel[trueDistance] * priorDist[p]
-        posteriorDist.normalize()
 
         # Check that there is at least one nonzero element
         isNonZero = False

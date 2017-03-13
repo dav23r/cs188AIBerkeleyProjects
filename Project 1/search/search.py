@@ -73,119 +73,109 @@ def tinyMazeSearch(problem):
     return  [s, s, w, s, w, w, s, w]
 
 def depthFirstSearch(problem):
-    all_nodes = util.Stack()
-
-    all_nodes.push([problem.getStartState(), []])
-    been = set()
-
-    while not all_nodes.isEmpty():
-        curr_node = all_nodes.pop()
-        st, movements = curr_node
-
-        if problem.isGoalState(st):
-            return movements
-
-        if st not in been:
-            been.add(st)
-
-            for neighbor in problem.getSuccessors(st):
-	        copy = neighbor[0], movements[:] + [neighbor[1]]
-	        all_nodes.push(copy)
-
-    return []
-
+    from util import Stack
+    """
+    Search the deepest nodes in the search tree first.
+    Your search algorithm needs to return a list of actions that reaches the
+    goal. Make sure to implement a graph search algorithm.
+    """
+    # Passing 'stack' to be used as fringe for generic search will result in dfs algorithm.
+    return genericSearch(problem, fringe = Stack(), useCost = False)
 
 def breadthFirstSearch(problem):
-    all_nodes = util.Queue()
-
-    all_nodes.push([problem.getStartState(), []])
-    been = set()
-
-    while not all_nodes.isEmpty():
-        curr_node = all_nodes.pop()
-        st, movements = curr_node
-
-        if problem.isGoalState(st):
-            return movements
-
-        if st not in been:
-            been.add(st)
-
-            for neighbor in problem.getSuccessors(st):
-	        copy = neighbor[0], movements[:] + [neighbor[1]]
-	        all_nodes.push(copy)
-
-    return []
-
-def calculate_priority(path):
-    i = 0
-    for bridge in path:
-        i += bridge[2]
-
-    return i
+    from util import Queue
+    """Search the shallowest nodes in the search tree first."""
+    # Using 'queue' as a fringe will lead to breadth-first traversal.
+    return genericSearch(problem, fringe = Queue(), useCost = False) 
 
 def uniformCostSearch(problem):
-    all_nodes = util.PriorityQueueWithFunction(lambda n: n[2]) # compare by cost
-
-    all_nodes.push([problem.getStartState(), [], 0]) # cost of 0 initially
-    been = set()
-
-    while not all_nodes.isEmpty():
-        curr_node = all_nodes.pop()
-        st, movements, cost = curr_node
-
-        if problem.isGoalState(st):
-            return movements
-
-        if st not in been:
-            been.add(st)
-
-            for neighbor in problem.getSuccessors(st):
-	        copy = neighbor[0], movements[:] + [neighbor[1]], neighbor[2] + cost
-	        all_nodes.push(copy)
-
-    return []
-
+    from util import PriorityQueueWithFunction as pq
+    """Search the node of least total cost first."""
+    # 'Priority queue' alongside with cost will work for weighted graphs as ucs
+    # Function is passed to compare 'state' items by the cumulative cost from start to the state.
+    func = lambda node: node.getCost() 
+    return genericSearch(problem, fringe = pq(func), useCost = True) 
 
 def nullHeuristic(state, problem=None):
     """
     A heuristic function estimates the cost from the current state to the nearest
-    goal in the provided SearchProblem.  This heuristic is trivial.
+    goal in the provided SearchProblem.  This heuristic is trivial. Using this 
+    heuristic essentially boils down to uniform cost search.
     """
     return 0
 
-def fn(path):
-    i = 0
-    for bridge in path:
-        i += bridge[2]
-
-    return i + path[len(path)-1][3]
-
 def aStarSearch(problem, heuristic=nullHeuristic):
+    from util import PriorityQueueWithFunction as pq
+    """Search the node that has the lowest combined cost and heuristic first."""
+    # This time function estimates cost as price from start to current node +
+    # heuristical belief of cost from current to the goal state
+    func = lambda node: node.getCost() + heuristic(node.getState(), problem)
+    return genericSearch(problem, fringe = pq(func), useCost = True)
+
+def dijkstraWithAllPaths(problem):
+    from util import PriorityQueueWithFunction as pq
+    """Same as ucs, but with paths to all states traversed, not just 'goal'."""
+    func = lambda node: node.getCost()
+    # the format is (dirs to goal, dict of (some state -> dirs to that state from start)
+    return genericSearch(problem, fringe = pq(func), useCost = True, allStates = True)
+
+# Searches state spaces using different traversals determined by type of 'fringe'
+# If allStates is True, function will store pathes to all states not just 'goal'
+def genericSearch(problem, fringe, useCost, allStates = False):
     
-    startState = problem.getStartState()
-    h = heuristic
-    # compare by cost to achive that state + heuristic value there
-    all_nodes = util.PriorityQueueWithFunction(lambda n: n[2] + h(n[0], problem)) 
+    # Inner class for conveniently storing search nodes
+    class Node():
+        def __init__(self, directions, state, cumulativeCost = None):
+            self.directions = directions
+            self.state = state
+            if cumulativeCost != None:
+                self.cumulativeCost = cumulativeCost
 
-    all_nodes.push([startState, [], 0]) # cost of 0 initially
-    been = set()
+        getDirections = lambda self: self.directions
+        getState      = lambda self: self.state
+        getCost       = lambda self: self.cumulativeCost
 
-    while not all_nodes.isEmpty():
-        curr_node = all_nodes.pop()
-        st, movements, cost = curr_node
+    """
+    Generic graph traversal. Depending on the fringe search will be performed
+    in a particular way (dfs, bfs, A*, ucs)
+    """
+    # Initialize fringe with single start state, if cost is to be considered add arg
+    startNodeArg = ( [], problem.getStartState() )
+    if useCost: startNodeArg += (0,)
+    # Asterisk unpacks arguments
+    fringe.push( Node(*startNodeArg) ) # add new node to the fringe with provided args
+    # Set to store already considered coords
+    traversedStates = set()
+    # Store (state -> cost to get there from start state) in dictionary
+    if allStates:
+        paths = {}
 
-        if problem.isGoalState(st):
-            return movements
+    # Do the following: extract states from fringe
+    # and process them until either goal is found
+    # of fringe becomes empty
+    while not fringe.isEmpty():
+        # Extract next 'State' object which stores directions, coord and optionally cost 
+        curNode = fringe.pop()
+        curState = curNode.getState()
+        # If we already came across this one move to next iteration
+        if curState in traversedStates:
+            continue
+        traversedStates.add(curState)
+        # Store in the dictionary
+        if allStates:
+            paths[curState] = curNode.getDirections()
+        # Yayy, we found it
+        if problem.isGoalState(curState):
+            dirs = curNode.getDirections()
+            return dirs if not allStates else (dirs, paths)
+        # Extend fringe with new visible states
+        for successor in problem.getSuccessors(curState):
+            nextState, directionToMove, price = successor    # price is used only if flag is on
+            nextNodeArg = ( curNode.getDirections()[:] + [directionToMove], nextState ) # [:] deep copy
+            if useCost: nextNodeArg += (curNode.getCost() + price,)
+            fringe.push( Node(*nextNodeArg) ) 
 
-        if st not in been:
-            been.add(st)
-
-            for neighbor in problem.getSuccessors(st):
-	        copy = neighbor[0], movements[:] + [neighbor[1]], neighbor[2] + cost
-	        all_nodes.push(copy)
-
-    return []
+    return [] if not allStates else ([], paths) # Cant reach the goal state, better stay where you are
 
 # Abbreviations
 bfs = breadthFirstSearch
